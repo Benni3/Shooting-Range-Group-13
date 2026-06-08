@@ -8,10 +8,7 @@ void setup()
     pinMode(LED_BUILTIN, OUTPUT);
 
     Serial.begin(9600);
-
-    while (!Serial) {
-        ;
-    }
+    delay(1000);
 
     Serial.println("READY");
 }

@@ -1,3 +1,5 @@
+print("APP STARTED")
+
 import customtkinter as ctk
 from autoconnect import connect_arduino
 from serial_control import Microcontroller
@@ -9,6 +11,8 @@ ctk.set_default_color_theme("blue")
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+
+        print("APP INIT")
 
         self.title("DTU Microcontroller Control")
         self.geometry("500x350")
@@ -57,25 +61,31 @@ class App(ctk.CTk):
         )
         self.led_off_button.pack(pady=10)
 
+        print("SCHEDULING CONNECT")
         self.after(1000, self.connect)
 
     def set_connected(self, connected: bool, message: str):
-        if connected:
-            self.status_light.configure(text_color="green")
-        else:
-            self.status_light.configure(text_color="red")
+        print("SET CONNECTED:", connected, message)
 
+        self.status_light.configure(
+            text_color="green" if connected else "red"
+        )
         self.status_label.configure(text=message)
 
     def connect(self):
+        print("CONNECT FUNCTION CALLED")
+
         if self.mcu and self.mcu.is_connected():
+            print("Already connected")
             return
 
         ser = connect_arduino(
             baudrate=9600,
-            timeout=1,
+            timeout=2,
             retry=False,
         )
+
+        print("SER RESULT:", ser)
 
         if ser:
             self.mcu = Microcontroller(serial_connection=ser)
@@ -85,18 +95,16 @@ class App(ctk.CTk):
             self.after(2000, self.connect)
 
     def send(self, command):
+        print("SEND:", command)
+
         if self.mcu and self.mcu.is_connected():
-            try:
-                self.mcu.send(command)
-                self.status_label.configure(text=f"Sent: {command}")
-            except Exception as e:
-                self.mcu = None
-                self.set_connected(False, f"Disconnected: {e}")
-                self.after(2000, self.connect)
+            self.mcu.send(command)
+            self.status_label.configure(text=f"Sent: {command}")
         else:
             self.set_connected(False, "Not connected")
             self.after(2000, self.connect)
 
 
-app = App()
-app.mainloop()
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
