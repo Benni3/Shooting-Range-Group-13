@@ -2,6 +2,9 @@
 #define HANDSHAKE_H
 
 const char* get_project_id(void);
+
 int is_handshake_command(const char* command);
+
+int is_ping_command(const char* command);
 
 #endif
