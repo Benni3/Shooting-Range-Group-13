@@ -43,6 +43,8 @@ class ShootingRangeUI:
         self.rail_length = 90.00
         self.updating_target_from_mc = False
         self.updating_slider_from_code = False
+        self.last_gui_target_sent_time = None
+        self.last_gui_target_value = None
 
         self.speed = 0.0
         self.horizontal_speed = 0.0
@@ -119,8 +121,23 @@ class ShootingRangeUI:
 
             self.actual_position = state.actual_position
 
-            if abs(state.target_position - self.target_position) > 0.01:
-                self.update_target_gui(state.target_position)
+            allow_arduino_target = True
+
+            if self.last_gui_target_sent_time is not None:
+                age = (datetime.now() - self.last_gui_target_sent_time).total_seconds()
+
+                if age < 2.0:
+                    allow_arduino_target = False
+
+                elif self.last_gui_target_value is not None:
+                    if abs(state.target_position - self.last_gui_target_value) < 0.2:
+                        allow_arduino_target = True
+                    else:
+                        allow_arduino_target = False
+
+            if allow_arduino_target:
+                if abs(state.target_position - self.target_position) > 0.01:
+                    self.update_target_gui(state.target_position)
 
             self.horizontal_speed = state.horizontal_speed
             self.vertical_speed = state.vertical_speed
@@ -159,15 +176,19 @@ class ShootingRangeUI:
         self.updating_slider_from_code = True
         self.target_position = value
 
-        self.position_slider.value = value
-        self.position_input.value = f"{value:.2f}"
+        self.position_slider.set_value(value)
+        self.position_input.set_value(f"{value:.2f}")
         self.target_position_text.text = f"{value:.2f}"
 
-        self.admin_position_slider.value = value
-        self.admin_position_input.value = f"{value:.2f}"
+        self.admin_position_slider.set_value(value)
+        self.admin_position_input.set_value(f"{value:.2f}")
         self.admin_target_position_text.text = f"{value:.2f}"
 
-        self.updating_slider_from_code = False
+        ui.timer(
+            0.05,
+            lambda: setattr(self, "updating_slider_from_code", False),
+            once=True,
+        )
 
     def update_target_widgets(self):
         self.updating_target_from_mc = True
@@ -291,7 +312,14 @@ class ShootingRangeUI:
         value = round(float(value), 2)
         value = max(0, min(self.rail_length, value))
 
-        self.update_target_gui(value)
+        self.target_position = value
+
+        self.position_input.value = f"{value:.2f}"
+        self.target_position_text.text = f"{value:.2f}"
+
+        self.admin_position_input.value = f"{value:.2f}"
+        self.admin_target_position_text.text = f"{value:.2f}"
+
         self.send_to_bridge("SET_TARGET_POSITION", value)
 
     def set_position_from_input(self):
