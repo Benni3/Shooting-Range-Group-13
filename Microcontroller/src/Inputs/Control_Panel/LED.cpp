@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "../Pins/pins.h"
+#include "../../Pins/pins.h"
 #include "LED.h"
 
 void led_stop(bool on)

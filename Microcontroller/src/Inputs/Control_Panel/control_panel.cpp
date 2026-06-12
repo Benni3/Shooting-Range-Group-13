@@ -2,12 +2,13 @@
 #include "buttons.h"
 #include "slider.h"
 #include "LED.h"
+#include "switch.h"
 
 void control_panel_init()
 {
     led_show_stop();
+    system_switch_init();
 }
-
 ControlPanelState read_control_panel()
 {
     ControlPanelState state;
@@ -15,13 +16,27 @@ ControlPanelState read_control_panel()
     state.slow_pressed = slow_button_pressed();
     state.fast_pressed = fast_button_pressed();
     state.emergency_pressed = emergency_button_pressed();
-    state.switch_enabled = switch_enabled();
+    state.master_switch_on = master_switch_on();
 
     state.slider_a_raw = read_slider_a_raw();
     state.slider_b_raw = read_slider_b_raw();
 
     state.slider_a_percent = read_slider_a_percent();
     state.slider_b_percent = read_slider_b_percent();
+
+    system_switch_update(
+        false,
+        false
+    );
+
+    state.system_switch_pressed =
+        system_switch_pressed();
+
+    state.shutdown_requested =
+        system_switch_shutdown_requested();
+
+    state.ready_to_power_off =
+        system_switch_ready_to_power_off();
 
     return state;
 }

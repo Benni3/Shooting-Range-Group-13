@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "../Pins/pins.h"
+#include "../../Pins/pins.h"
 #include "encoder.h"
 
 static long counts = 0;

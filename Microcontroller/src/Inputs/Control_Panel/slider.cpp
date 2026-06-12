@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "../Pins/pins.h"
+#include "../../Pins/pins.h"
 #include "slider.h"
 
 static bool ui_slider_a_enabled = false;

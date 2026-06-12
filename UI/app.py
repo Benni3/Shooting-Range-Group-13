@@ -10,6 +10,8 @@ sys.path.append(str(ROOT_DIR))
 
 from Bridge.autoconnect import connect_arduino
 from Bridge.serial_control import Microcontroller
+from Bridge import downstream as down
+from Bridge.upstream import UpstreamState
 
 COLORS = {
     "pink": "#ffadad",
@@ -31,6 +33,7 @@ MUTED = "#6b7280"
 class ShootingRangeUI:
     def __init__(self):
         self.mcu = None
+        self.mc_state = UpstreamState()
 
         self.connected = False
         self.admin_mode = False
@@ -79,10 +82,56 @@ class ShootingRangeUI:
         self.build_ui()
         ui.timer(0.8, self.try_connect, once=True)
         ui.timer(0.5, self.update_visuals)
+        ui.timer(0.1, self.read_upstream)
         ui.timer(1.5, self.check_connection)
 
     def send_to_bridge(self, command: str, value=None):
-        print(f"BRIDGE OUT: {command}", value)
+        if not self.mcu or not self.mcu.is_connected():
+            print(f"NOT CONNECTED, DROPPED: {command}", value)
+            return
+
+        if value is None:
+            message = command
+        else:
+            message = f"{command}:{value}"
+
+        print("BRIDGE OUT:", message)
+        self.mcu.send(message)
+    
+    def read_upstream(self):
+        if not self.mcu or not self.mcu.is_connected():
+            return
+
+        try:
+            state = self.mcu.read_state()
+
+            if state is None:
+                return
+
+            self.mc_state = state
+
+            self.actual_position = state.actual_position
+            self.target_position = state.target_position
+
+            self.horizontal_speed = state.horizontal_speed
+            self.vertical_speed = state.vertical_speed
+            self.horizontal_acceleration = state.horizontal_acceleration
+
+            self.angular_speed = state.angular_speed
+            self.rotational_position = state.rotational_position
+            self.angular_acceleration = state.angular_acceleration
+
+            self.voltage = state.voltage
+            self.current = state.current
+            self.pwm_value = state.pwm
+
+            self.mode = state.mode
+            self.direction = state.direction
+            self.emergency_active = state.emergency_active
+            self.motor_temperature = state.motor_temperature
+
+        except Exception as e:
+            print("UPSTREAM READ ERROR:", e)
 
     def check_handshake(self) -> bool:
         if self.mcu and self.mcu.is_connected():

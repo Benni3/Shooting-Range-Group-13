@@ -1,11 +1,11 @@
 #include <Arduino.h>
-#include "../Pins/pins.h"
+#include "../../Pins/pins.h"
 #include "buttons.h"
 
 static bool ui_slow_pressed = false;
 static bool ui_fast_pressed = false;
 static bool ui_emergency_pressed = false;
-static bool ui_switch_enabled = false;
+static bool ui_master_switch_on = false;
 
 bool slow_button_pressed()
 {
@@ -22,9 +22,9 @@ bool emergency_button_pressed()
     return digitalRead(EMERGENCY_STOP_BUTTON) == LOW || ui_emergency_pressed;
 }
 
-bool switch_enabled()
+bool master_switch_on()
 {
-    return digitalRead(SWITCH) == LOW || ui_switch_enabled;
+    return digitalRead(SWITCH) == LOW || ui_master_switch_on;
 }
 
 void set_ui_slow_button(bool pressed)
@@ -44,5 +44,5 @@ void set_ui_emergency_button(bool pressed)
 
 void set_ui_switch(bool enabled)
 {
-    ui_switch_enabled = enabled;
+    ui_master_switch_on = enabled;
 }

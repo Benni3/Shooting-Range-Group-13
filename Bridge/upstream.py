@@ -10,7 +10,6 @@ class UpstreamState:
 
     horizontal_speed: float = 0.0
     vertical_speed: float = 0.0
-
     horizontal_acceleration: float = 0.0
 
     angular_speed: float = 0.0
@@ -32,4 +31,3 @@ class UpstreamState:
     emergency_active: bool = False
 
     motor_temperature: float = 0.0
-    

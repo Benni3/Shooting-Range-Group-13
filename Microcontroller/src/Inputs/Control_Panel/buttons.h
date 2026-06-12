@@ -3,7 +3,7 @@
 bool slow_button_pressed();
 bool fast_button_pressed();
 bool emergency_button_pressed();
-bool switch_enabled();
+bool master_switch_on();
 
 void set_ui_slow_button(bool pressed);
 void set_ui_fast_button(bool pressed);
