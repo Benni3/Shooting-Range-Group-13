@@ -8,12 +8,19 @@ class Microcontroller:
         self.ser = serial_connection
 
     def send(self, command: str):
+        if not self.is_connected():
+            return
+
         self.ser.write((command + "\n").encode())
 
     def send_command(self, command: DownstreamCommand):
-        self.send(encode_command(command))
+        message = encode_command(command)
+        self.send(message)
 
-    def read(self):
+    def read(self) -> str:
+        if not self.is_connected():
+            return ""
+
         return self.ser.readline().decode(errors="ignore").strip()
 
     def read_state(self) -> UpstreamState | None:
@@ -22,9 +29,15 @@ class Microcontroller:
         if not line:
             return None
 
+        if line in ("READY", "PONG", "DTU_CONTROLLER"):
+            return None
+
+        if "=" not in line:
+            return None
+
         return parse_upstream(line)
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         return self.ser is not None and self.ser.is_open
 
     def close(self):

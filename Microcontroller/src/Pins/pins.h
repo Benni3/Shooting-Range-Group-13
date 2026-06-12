@@ -10,6 +10,8 @@ constexpr uint8_t PIN_POTENTIOMETER_B     = A5;
 constexpr uint8_t SLOW_BUTTON             =  9;
 constexpr uint8_t FAST_BUTTON             =  6;
 constexpr uint8_t EMERGENCY_STOP_BUTTON   =  5;
+constexpr uint8_t SWITCH                  =  4;
+
 
 // Inputs for motor safety
 constexpr uint8_t PIN_CURRENT_SENSOR       = A1;
