@@ -1,6 +1,5 @@
 from nicegui import ui
 from datetime import datetime
-import random
 
 import sys
 from pathlib import Path
@@ -39,9 +38,11 @@ class ShootingRangeUI:
         self.admin_mode = False
         self.emergency_active = False
 
-        self.target_position = 50.00
-        self.actual_position = 50.0
+        self.target_position = 0.00
+        self.actual_position = 0.00
         self.rail_length = 90.00
+        self.updating_target_from_mc = False
+        self.updating_slider_from_code = False
 
         self.speed = 0.0
         self.horizontal_speed = 0.0
@@ -79,11 +80,14 @@ class ShootingRangeUI:
         self.rotational_position_data = []
         self.temperature_data = []
 
+        self.last_upstream_time = None
+        self.connection_check_running = False
+
         self.build_ui()
-        ui.timer(0.8, self.try_connect, once=True)
+
         ui.timer(0.5, self.update_visuals)
         ui.timer(0.1, self.read_upstream)
-        ui.timer(1.5, self.check_connection)
+        ui.timer(1.0, self.check_connection)
 
     def send_to_bridge(self, command: str, value=None):
         if not self.mcu or not self.mcu.is_connected():
@@ -109,9 +113,14 @@ class ShootingRangeUI:
                 return
 
             self.mc_state = state
+            self.last_upstream_time = datetime.now()
+            self.connected = True
+            self.update_connection_ui()
 
             self.actual_position = state.actual_position
-            self.target_position = state.target_position
+
+            if abs(state.target_position - self.target_position) > 0.01:
+                self.update_target_gui(state.target_position)
 
             self.horizontal_speed = state.horizontal_speed
             self.vertical_speed = state.vertical_speed
@@ -133,63 +142,97 @@ class ShootingRangeUI:
         except Exception as e:
             print("UPSTREAM READ ERROR:", e)
 
-    def check_handshake(self) -> bool:
-        if self.mcu and self.mcu.is_connected():
+            self.connected = False
+
             try:
-                self.mcu.send("PING")
-                reply = self.mcu.read()
-
-                print("PING:", repr(reply))
-
-                return reply and reply.strip() == "PONG"
-
+                self.mcu.close()
             except Exception:
-                self.mcu = None
-                return False
+                pass
 
-        return False
+            self.mcu = None
+            self.update_connection_ui()
+
+    def update_target_gui(self, value):
+        value = round(float(value), 2)
+        value = max(0, min(self.rail_length, value))
+
+        self.updating_slider_from_code = True
+        self.target_position = value
+
+        self.position_slider.value = value
+        self.position_input.value = f"{value:.2f}"
+        self.target_position_text.text = f"{value:.2f}"
+
+        self.admin_position_slider.value = value
+        self.admin_position_input.value = f"{value:.2f}"
+        self.admin_target_position_text.text = f"{value:.2f}"
+
+        self.updating_slider_from_code = False
+
+    def update_target_widgets(self):
+        self.updating_target_from_mc = True
+
+        self.position_slider.set_value(self.target_position)
+        self.position_input.set_value(f"{self.target_position:.2f}")
+        self.target_position_text.text = f"{self.target_position:.2f}"
+
+        self.admin_position_slider.set_value(self.target_position)
+        self.admin_position_input.set_value(f"{self.target_position:.2f}")
+        self.admin_target_position_text.text = f"{self.target_position:.2f}"
+
+        self.updating_target_from_mc = False
+
+    def check_handshake(self) -> bool:
+        return self.mcu is not None and self.mcu.is_connected()
 
     def check_connection(self):
         if self.mcu and self.mcu.is_connected():
-            self.connected = self.check_handshake()
+            if self.last_upstream_time is None:
+                return
 
-            if not self.connected:
-                try:
-                    self.mcu.close()
-                except Exception:
-                    pass
+            age = (datetime.now() - self.last_upstream_time).total_seconds()
 
-                self.mcu = None
-
-        else:
-            self.connected = False
-            self.mcu = None
-
-            ser = connect_arduino(
-                baudrate=9600,
-                timeout=2,
-                retry=False,
-            )
-
-            if ser:
-                self.mcu = Microcontroller(serial_connection=ser)
+            if age <= 3:
                 self.connected = True
+                self.update_connection_ui()
+                return
 
-        self.update_connection_ui()
+            print("Heartbeat lost. Closing serial.")
+
+            try:
+                self.mcu.close()
+            except Exception:
+                pass
+
+            self.mcu = None
+            self.connected = False
+            self.last_upstream_time = None
+            self.update_connection_ui()
+
+        # auto reconnect only after connection is gone
+        print("Trying auto reconnect...")
+        self.try_connect()
 
     def try_connect(self):
-        self.header_status_text.text = "Trying handshake..."
+        if self.mcu and self.mcu.is_connected():
+            self.connected = True
+            self.update_connection_ui()
+            return
+
+        self.header_status_text.text = "Trying connection..."
 
         ser = connect_arduino(
             baudrate=9600,
-            timeout=2,
+            timeout=0,
             retry=False,
         )
 
         if ser:
             self.mcu = Microcontroller(serial_connection=ser)
             self.connected = True
-            self.header_status_text.text = f"Connected"
+            self.last_upstream_time = None
+
+            self.header_status_text.text = "Connected"
             self.connect_button.visible = False
             self.manual_box.visible = False
         else:
@@ -206,7 +249,7 @@ class ShootingRangeUI:
         port = self.port_input.value
 
         try:
-            ser = serial.Serial(port, baudrate=9600, timeout=2)
+            ser = serial.Serial(port, baudrate=9600, timeout=0)
             self.mcu = Microcontroller(serial_connection=ser)
 
             if self.check_handshake():
@@ -242,18 +285,14 @@ class ShootingRangeUI:
             self.manual_box.visible = False
 
     def set_position(self, value):
-        self.target_position = round(float(value), 2)
-        self.target_position = max(0, min(self.rail_length, self.target_position))
+        if self.updating_slider_from_code:
+            return
 
-        self.position_slider.value = self.target_position
-        self.position_input.value = f"{self.target_position:.2f}"
-        self.target_position_text.text = f"{self.target_position:.2f}"
+        value = round(float(value), 2)
+        value = max(0, min(self.rail_length, value))
 
-        self.admin_position_slider.value = self.target_position
-        self.admin_position_input.value = f"{self.target_position:.2f}"
-        self.admin_target_position_text.text = f"{self.target_position:.2f}"
-
-        self.send_to_bridge("SET_TARGET_POSITION", self.target_position)
+        self.update_target_gui(value)
+        self.send_to_bridge("SET_TARGET_POSITION", value)
 
     def set_position_from_input(self):
         try:
@@ -584,7 +623,7 @@ class ShootingRangeUI:
                 with ui.card().classes("card w-full p-7"):
                     with ui.row().classes("w-full justify-between"):
                         self.state_card = self.small_metric("State", "IDLE", COLORS["magenta"])
-                        self.actual_card = self.small_metric("Actual", "50.0", COLORS["green"])
+                        self.actual_card = self.small_metric("Actual", "0.0", COLORS["green"])
                         self.speed_user_card = self.small_metric("Speed", "0.0", COLORS["cyan"])
                         self.direction_card = self.small_metric("Direction", "STOP", COLORS["purple"])
 
@@ -946,84 +985,23 @@ class ShootingRangeUI:
         chart.update()
 
     def update_visuals(self):
-        old_position = self.actual_position
-
-        self.actual_position += (self.target_position - self.actual_position) * 0.08
-
-        raw_speed = (self.actual_position - old_position) * 20
-
-        dt = 0.5
-
-        self.horizontal_speed = raw_speed
-
-        self.horizontal_acceleration = (
-            self.horizontal_speed
-            - self.previous_horizontal_speed
-        ) / dt
-
-        self.previous_horizontal_speed = self.horizontal_speed
-
-        if self.horizontal_speed > 0.01:
-            self.direction = "FORWARD"
-        elif self.horizontal_speed < -0.01:
-            self.direction = "BACK"
-        else:
-            self.direction = "STOP"
-
-        self.speed = self.horizontal_speed
-        self.angular_speed = self.pwm_value / 255 * 100
-
-        self.angular_acceleration = (
-            self.angular_speed
-            - self.previous_angular_speed
-        ) / dt
-
-        self.previous_angular_speed = self.angular_speed
-        self.vertical_speed = random.uniform(-2.0, 2.0)
-
-        self.rotational_position += (
-            self.angular_speed * dt / 60.0
-        )
-
-        self.motor_temperature += (
-            abs(self.pwm_value) / 255 * 0.05
-        )
-
-        self.motor_temperature -= 0.01
-
-        self.motor_temperature = max(
-            20,
-            min(100, self.motor_temperature)
-        )
-
-        self.voltage = 12.0 + random.uniform(-0.2, 0.2)
-        self.current = abs(self.pwm_value / 255) * 2.2 + random.uniform(0, 0.08)
-        self.pwm_data.append(round(self.pwm_value, 2))
-        self.angular_speed_data.append(round(self.angular_speed, 2))
-
         now = datetime.now().strftime("%H:%M:%S")
 
+        self.speed = self.horizontal_speed
+
         self.chart_time.append(now)
+
         self.voltage_data.append(round(self.voltage, 2))
         self.current_data.append(round(self.current, 2))
         self.position_data.append(round(self.actual_position, 2))
         self.horizontal_speed_data.append(round(self.horizontal_speed, 2))
         self.vertical_speed_data.append(round(self.vertical_speed, 2))
-        self.horizontal_acceleration_data.append(
-            round(self.horizontal_acceleration, 2)
-        )
-
-        self.angular_acceleration_data.append(
-            round(self.angular_acceleration, 2)
-        )
-
-        self.rotational_position_data.append(
-            round(self.rotational_position, 2)
-        )
-
-        self.temperature_data.append(
-            round(self.motor_temperature, 2)
-        )
+        self.pwm_data.append(round(self.pwm_value, 2))
+        self.angular_speed_data.append(round(self.angular_speed, 2))
+        self.horizontal_acceleration_data.append(round(self.horizontal_acceleration, 2))
+        self.angular_acceleration_data.append(round(self.angular_acceleration, 2))
+        self.rotational_position_data.append(round(self.rotational_position, 2))
+        self.temperature_data.append(round(self.motor_temperature, 2))
 
         self.chart_time = self.chart_time[-40:]
         self.voltage_data = self.voltage_data[-40:]
@@ -1042,7 +1020,6 @@ class ShootingRangeUI:
         self.actual_card.text = f"{self.actual_position:.1f}"
         self.speed_user_card.text = f"{self.speed:.2f}"
         self.direction_card.text = self.direction
-        self.update_leds()
 
         self.admin_state_card.text = self.mode
         self.admin_actual_card.text = f"{self.actual_position:.1f}"
@@ -1054,74 +1031,72 @@ class ShootingRangeUI:
         self.pwm_text.text = str(self.pwm_value)
         self.admin_speed_text.text = f"{self.angular_speed:.2f}"
 
-        self.horizontal_accel_text.text = (
-            f"{self.horizontal_acceleration:.2f}"
-        )
+        self.horizontal_accel_text.text = f"{self.horizontal_acceleration:.2f}"
+        self.angular_accel_text.text = f"{self.angular_acceleration:.2f}"
+        self.rotational_position_text.text = f"{self.rotational_position:.2f}"
+        self.temperature_text.text = f"{self.motor_temperature:.1f} °C"
 
-        self.angular_accel_text.text = (
-            f"{self.angular_acceleration:.2f}"
-        )
-
-        self.rotational_position_text.text = (
-            f"{self.rotational_position:.2f}"
-        )
-
-        self.temperature_text.text = (
-            f"{self.motor_temperature:.1f} °C"
-        )
+        self.update_leds()
 
         if self.admin_panel.visible:
             self.update_echart(
-                self.admin_position_chart, 
-                self.chart_time, 
-                self.position_data)
-            self.update_echart(
-                self.admin_horizontal_speed_chart, 
-                self.chart_time, 
-                self.horizontal_speed_data
+                self.admin_position_chart,
+                self.chart_time,
+                self.position_data,
             )
 
             self.update_echart(
-                self.voltage_chart, 
-                self.chart_time, 
-                self.voltage_data)
+                self.admin_horizontal_speed_chart,
+                self.chart_time,
+                self.horizontal_speed_data,
+            )
+
             self.update_echart(
-                self.current_chart, 
-                self.chart_time, 
-                self.current_data
-                )
+                self.voltage_chart,
+                self.chart_time,
+                self.voltage_data,
+            )
+
             self.update_echart(
-                self.pwm_chart, 
-                self.chart_time, 
-                self.pwm_data
-                )
+                self.current_chart,
+                self.chart_time,
+                self.current_data,
+            )
+
             self.update_echart(
-                self.angular_speed_chart, 
-                self.chart_time, 
-                self.angular_speed_data
-                )
+                self.pwm_chart,
+                self.chart_time,
+                self.pwm_data,
+            )
+
+            self.update_echart(
+                self.angular_speed_chart,
+                self.chart_time,
+                self.angular_speed_data,
+            )
+
             self.update_echart(
                 self.horizontal_acceleration_chart,
                 self.chart_time,
-                self.horizontal_acceleration_data
+                self.horizontal_acceleration_data,
             )
 
             self.update_echart(
                 self.angular_acceleration_chart,
                 self.chart_time,
-                self.angular_acceleration_data
+                self.angular_acceleration_data,
             )
 
             self.update_echart(
                 self.rotational_position_chart,
                 self.chart_time,
-                self.rotational_position_data
+                self.rotational_position_data,
             )
 
             self.update_echart(
                 self.temperature_chart,
                 self.chart_time,
-                self.temperature_data
+                self.temperature_data,
             )
 
 ShootingRangeUI()

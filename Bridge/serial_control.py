@@ -7,35 +7,41 @@ class Microcontroller:
     def __init__(self, serial_connection):
         self.ser = serial_connection
 
+        # Important: never let readline block NiceGUI
+        if self.ser is not None:
+            self.ser.timeout = 0
+
     def send(self, command: str):
         if not self.is_connected():
             return
 
-        self.ser.write((command + "\n").encode())
+        message = command.strip() + "\n"
+        self.ser.write(message.encode())
+        self.ser.flush()
 
     def send_command(self, command: DownstreamCommand):
-        message = encode_command(command)
-        self.send(message)
+        self.send(encode_command(command))
 
     def read(self) -> str:
         if not self.is_connected():
             return ""
 
+        if self.ser.in_waiting <= 0:
+            return ""
+
         return self.ser.readline().decode(errors="ignore").strip()
 
     def read_state(self) -> UpstreamState | None:
-        line = self.read()
+        while self.is_connected() and self.ser.in_waiting > 0:
+            line = self.read()
 
-        if not line:
-            return None
+            if not line:
+                return None
 
-        if line in ("READY", "PONG", "DTU_CONTROLLER"):
-            return None
+            if line.startswith("POS="):
+                return parse_upstream(line)
 
-        if "=" not in line:
-            return None
-
-        return parse_upstream(line)
+        return None
 
     def is_connected(self) -> bool:
         return self.ser is not None and self.ser.is_open
