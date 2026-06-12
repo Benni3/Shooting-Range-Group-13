@@ -42,8 +42,17 @@ class ShootingRangeUI:
 
         self.speed = 0.0
         self.horizontal_speed = 0.0
+        self.previous_horizontal_speed = 0.0
+        self.horizontal_acceleration = 0.0
+
         self.angular_speed = 0.0
+        self.previous_angular_speed = 0.0
+        self.angular_acceleration = 0.0
+
+        self.rotational_position = 0.0
         self.vertical_speed = 0.0
+
+        self.motor_temperature = 25.0
 
         self.pwm_value = 0
         self.mode = "IDLE"
@@ -57,9 +66,15 @@ class ShootingRangeUI:
         self.position_data = []
         self.horizontal_speed_data = []
         self.vertical_speed_data = []
+        
 
         self.pwm_data = []
         self.angular_speed_data = []
+
+        self.horizontal_acceleration_data = []
+        self.angular_acceleration_data = []
+        self.rotational_position_data = []
+        self.temperature_data = []
 
         self.build_ui()
         ui.timer(0.8, self.try_connect, once=True)
@@ -646,17 +661,97 @@ class ShootingRangeUI:
                     ui.label("Live diagnostics").classes("text-2xl label-dark")
 
                     with ui.grid(columns=4).classes("w-full gap-4 mt-6"):
-                        self.voltage_text = self.admin_metric("Voltage", "0.00 V", COLORS["yellow"])
-                        self.current_text = self.admin_metric("Current", "0.00 A", COLORS["orange"])
-                        self.pwm_text = self.admin_metric("PWM", "0", COLORS["blue"])
-                        self.admin_speed_text = self.admin_metric("Angular speed", "0.00", COLORS["cyan"])
+                        self.voltage_text = self.admin_metric(
+                            "Voltage",
+                            "0.00 V",
+                            COLORS["yellow"]
+                        )
 
+                        self.current_text = self.admin_metric(
+                            "Current",
+                            "0.00 A",
+                            COLORS["orange"]
+                        )
+
+                        self.pwm_text = self.admin_metric(
+                            "PWM",
+                            "0",
+                            COLORS["blue"]
+                        )
+
+                        self.admin_speed_text = self.admin_metric(
+                            "Angular speed",
+                            "0.00",
+                            COLORS["cyan"]
+                        )
+
+                        self.horizontal_accel_text = self.admin_metric(
+                            "Horizontal accel",
+                            "0.00",
+                            COLORS["green"]
+                        )
+
+                        self.angular_accel_text = self.admin_metric(
+                            "Angular accel",
+                            "0.00",
+                            COLORS["purple"]
+                        )
+
+                        self.rotational_position_text = self.admin_metric(
+                            "Rotation pos",
+                            "0.00",
+                            COLORS["magenta"]
+                        )
+
+                        self.temperature_text = self.admin_metric(
+                            "Motor temp",
+                            "25.0 °C",
+                            COLORS["orange"]
+                        )
                     with ui.grid(columns=2).classes("w-full gap-5"):
-                        self.voltage_chart = self.chart_card("Voltage", "Motor supply voltage", "V")
-                        self.current_chart = self.chart_card("Current", "Ampere draw", "A")
-                        self.pwm_chart = self.chart_card("PWM", "PWM output over time", "PWM")
-                        self.angular_speed_chart = self.chart_card("Angular speed", "Estimated motor angular speed", "rad/s")
+                        self.voltage_chart = self.chart_card(
+                            "Voltage", 
+                            "Motor supply voltage", 
+                            "V"
+                            )
+                        self.current_chart = self.chart_card(
+                            "Current", 
+                            "Ampere draw", 
+                            "A"
+                            )
+                        self.pwm_chart = self.chart_card(
+                            "PWM", 
+                            "PWM output over time", 
+                            "PWM"
+                        )
+                        self.angular_speed_chart = self.chart_card(
+                            "Angular speed", 
+                            "Estimated motor angular speed", 
+                            "rad/s"
+                        )
+                        self.horizontal_acceleration_chart = self.chart_card(
+                            "Horizontal acceleration",
+                            "Rail acceleration",
+                            "cm/s²"
+                        )
 
+                        self.angular_acceleration_chart = self.chart_card(
+                            "Angular acceleration",
+                            "Motor acceleration",
+                            "rad/s²"
+                        )
+
+                        self.rotational_position_chart = self.chart_card(
+                            "Rotational position",
+                            "Encoder position",
+                            "rev"
+                        )
+
+                        self.temperature_chart = self.chart_card(
+                            "Motor temperature",
+                            "Motor temperature",
+                            "°C"
+                        )
 
                 with ui.row().classes("w-full gap-4 mt-6"):
                     ui.button("Recalibrate zero", on_click=self.recalibrate_zero).classes("soft-btn grow").style(
@@ -808,7 +903,16 @@ class ShootingRangeUI:
 
         raw_speed = (self.actual_position - old_position) * 20
 
+        dt = 0.5
+
         self.horizontal_speed = raw_speed
+
+        self.horizontal_acceleration = (
+            self.horizontal_speed
+            - self.previous_horizontal_speed
+        ) / dt
+
+        self.previous_horizontal_speed = self.horizontal_speed
 
         if self.horizontal_speed > 0.01:
             self.direction = "FORWARD"
@@ -819,7 +923,29 @@ class ShootingRangeUI:
 
         self.speed = self.horizontal_speed
         self.angular_speed = self.pwm_value / 255 * 100
+
+        self.angular_acceleration = (
+            self.angular_speed
+            - self.previous_angular_speed
+        ) / dt
+
+        self.previous_angular_speed = self.angular_speed
         self.vertical_speed = random.uniform(-2.0, 2.0)
+
+        self.rotational_position += (
+            self.angular_speed * dt / 60.0
+        )
+
+        self.motor_temperature += (
+            abs(self.pwm_value) / 255 * 0.05
+        )
+
+        self.motor_temperature -= 0.01
+
+        self.motor_temperature = max(
+            20,
+            min(100, self.motor_temperature)
+        )
 
         self.voltage = 12.0 + random.uniform(-0.2, 0.2)
         self.current = abs(self.pwm_value / 255) * 2.2 + random.uniform(0, 0.08)
@@ -834,6 +960,21 @@ class ShootingRangeUI:
         self.position_data.append(round(self.actual_position, 2))
         self.horizontal_speed_data.append(round(self.horizontal_speed, 2))
         self.vertical_speed_data.append(round(self.vertical_speed, 2))
+        self.horizontal_acceleration_data.append(
+            round(self.horizontal_acceleration, 2)
+        )
+
+        self.angular_acceleration_data.append(
+            round(self.angular_acceleration, 2)
+        )
+
+        self.rotational_position_data.append(
+            round(self.rotational_position, 2)
+        )
+
+        self.temperature_data.append(
+            round(self.motor_temperature, 2)
+        )
 
         self.chart_time = self.chart_time[-40:]
         self.voltage_data = self.voltage_data[-40:]
@@ -843,6 +984,10 @@ class ShootingRangeUI:
         self.vertical_speed_data = self.vertical_speed_data[-40:]
         self.pwm_data = self.pwm_data[-40:]
         self.angular_speed_data = self.angular_speed_data[-40:]
+        self.horizontal_acceleration_data = self.horizontal_acceleration_data[-40:]
+        self.angular_acceleration_data = self.angular_acceleration_data[-40:]
+        self.rotational_position_data = self.rotational_position_data[-40:]
+        self.temperature_data = self.temperature_data[-40:]
 
         self.state_card.text = self.mode
         self.actual_card.text = f"{self.actual_position:.1f}"
@@ -860,19 +1005,80 @@ class ShootingRangeUI:
         self.pwm_text.text = str(self.pwm_value)
         self.admin_speed_text.text = f"{self.angular_speed:.2f}"
 
-        if self.admin_panel.visible:
-            self.update_echart(self.admin_position_chart, self.chart_time, self.position_data)
-            self.update_echart(self.admin_horizontal_speed_chart, self.chart_time, self.horizontal_speed_data)
+        self.horizontal_accel_text.text = (
+            f"{self.horizontal_acceleration:.2f}"
+        )
 
-            self.update_echart(self.voltage_chart, self.chart_time, self.voltage_data)
-            self.update_echart(self.current_chart, self.chart_time, self.current_data)
-            self.update_echart(self.pwm_chart, self.chart_time, self.pwm_data)
-            self.update_echart(self.angular_speed_chart, self.chart_time, self.angular_speed_data)
+        self.angular_accel_text.text = (
+            f"{self.angular_acceleration:.2f}"
+        )
+
+        self.rotational_position_text.text = (
+            f"{self.rotational_position:.2f}"
+        )
+
+        self.temperature_text.text = (
+            f"{self.motor_temperature:.1f} °C"
+        )
+
+        if self.admin_panel.visible:
+            self.update_echart(
+                self.admin_position_chart, 
+                self.chart_time, 
+                self.position_data)
+            self.update_echart(
+                self.admin_horizontal_speed_chart, 
+                self.chart_time, 
+                self.horizontal_speed_data
+            )
+
+            self.update_echart(
+                self.voltage_chart, 
+                self.chart_time, 
+                self.voltage_data)
+            self.update_echart(
+                self.current_chart, 
+                self.chart_time, 
+                self.current_data
+                )
+            self.update_echart(
+                self.pwm_chart, 
+                self.chart_time, 
+                self.pwm_data
+                )
+            self.update_echart(
+                self.angular_speed_chart, 
+                self.chart_time, 
+                self.angular_speed_data
+                )
+            self.update_echart(
+                self.horizontal_acceleration_chart,
+                self.chart_time,
+                self.horizontal_acceleration_data
+            )
+
+            self.update_echart(
+                self.angular_acceleration_chart,
+                self.chart_time,
+                self.angular_acceleration_data
+            )
+
+            self.update_echart(
+                self.rotational_position_chart,
+                self.chart_time,
+                self.rotational_position_data
+            )
+
+            self.update_echart(
+                self.temperature_chart,
+                self.chart_time,
+                self.temperature_data
+            )
 
 ShootingRangeUI()
 
 ui.run(
     title="DTU Shooting Range Control",
     reload=False,
-    dark=False,
+    dark=True,
 )
